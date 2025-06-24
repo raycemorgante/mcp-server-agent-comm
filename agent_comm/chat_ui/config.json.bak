@@ -1,0 +1,28 @@
+{
+  "language": "vi",
+  "window_size": {
+    "width": 1160,
+    "height": 814
+  },
+  "ui_preferences": {
+    "continue_chat_default": true,
+    "remember_last_path": true,
+    "auto_expand_folders": true,
+    "enable_thinking_default": "high",
+    "max_reasoning_default": false,
+    "save_images_enabled": false
+  },
+  "last_workspace": {
+    "path": "E:\\MCP-servers-github\\Utils",
+    "name": "Utils",
+    "attached_files": [
+      {
+        "relative_path": "Utils/agent_comm",
+        "workspace_name": "Utils",
+        "name": "agent_comm",
+        "type": "folder"
+      }
+    ]
+  },
+  "last_attached_images": []
+}
