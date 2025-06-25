@@ -97,6 +97,7 @@ Feature "AI Chat" -> user can chat with all waiting agent.
 ### Step 2: Setup Agents in Cursor
 
 1. **Open Two Tabs**: Create two separate chat tabs in Cursor
+![image](https://github.com/user-attachments/assets/6327fb91-e927-423b-b4c6-9cf44ff867ff)
 2. **Tab 1 - Agent 1**: Type activation command to start Agent 1
 3. **Tab 2 - Agent 2**: Type activation command to start Agent 2
 4. **Execute Tools**: Allow AI to call the MCP server agent chat tools
