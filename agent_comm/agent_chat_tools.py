@@ -359,7 +359,7 @@ def agent_chat_1_tool(agent_id: str, message: str) -> Union[str, List]:
     try:
         flow_manager = FlowManager()
         
-        # Register as waiting agent
+        # Register as waiting agent (all agent messages go to queue)
         waiting_id = flow_manager.register_waiting_agent("agent_chat_1", agent_id, message)
         
         # Wait for message delivery from controller (infinite wait - no timeout)
@@ -400,7 +400,7 @@ def agent_chat_2_tool(agent_id: str, message: str) -> Union[str, List]:
     try:
         flow_manager = FlowManager()
         
-        # Register as waiting agent
+        # Register as waiting agent (all agent messages go to queue)
         waiting_id = flow_manager.register_waiting_agent("agent_chat_2", agent_id, message)
         
         # Wait for message delivery from controller (infinite wait - no timeout)

@@ -333,7 +333,16 @@ class ControllerUI(QDialog):
             self.waiting_agents_widget.addItem(item)
             return
         
-        for waiting_id, agent_data in waiting_agents.items():
+        # Sort agents by timestamp descending (newest first) for better UX
+        try:
+            sorted_agents = sorted(waiting_agents.items(), 
+                                 key=lambda x: x[1].get("timestamp", ""), 
+                                 reverse=True)
+        except:
+            # Fallback if sorting fails
+            sorted_agents = waiting_agents.items()
+        
+        for waiting_id, agent_data in sorted_agents:
             agent_tool = agent_data.get("agent_tool", "unknown").strip()
             agent_id = agent_data.get("agent_id", "unknown")
             status = agent_data.get("status", "unknown")
@@ -377,8 +386,17 @@ class ControllerUI(QDialog):
             self.delete_selected_btn.setEnabled(False)
             return
         
-        # Process each message safely
-        for msg in message_queue:
+        # Sort messages by timestamp descending (newest first) for better UX
+        try:
+            sorted_messages = sorted(message_queue, 
+                                   key=lambda x: x.get("timestamp", ""), 
+                                   reverse=True)
+        except:
+            # Fallback if sorting fails
+            sorted_messages = message_queue
+        
+        # Process each message safely (newest first order)
+        for msg in sorted_messages:
             try:
                 # Safely extract message data with defaults
                 from_agent = msg.get("from_agent", "unknown") if msg else "unknown"
@@ -389,37 +407,38 @@ class ControllerUI(QDialog):
                 # Safely format timestamp
                 timestamp_display = timestamp[:19] if timestamp and len(timestamp) >= 19 else "Unknown"
                 
-                # Smart preview: prioritize text content over summaries
+                # ROBUST text extraction: handle all formats
+                message_preview = ""
+                
+                # Check if JSON format (mixed JSON + AI_INTERACTION tags)
                 if message_content.strip().startswith('{'):
                     try:
                         import json
-                        parsed = json.loads(message_content.split("<AI_INTERACTION_CONTINUE_CHAT>")[0].strip())
-                        # Always prioritize text content for preview
-                        preview_text = parsed.get('text_content') or parsed.get('text', '')
-                        if preview_text:
+                        json_part = message_content.split("<AI_INTERACTION_")[0].strip()
+                        parsed = json.loads(json_part)
+                        # Extract text from JSON
+                        preview_text = (parsed.get('text_content') or 
+                                      parsed.get('text') or 
+                                      parsed.get('content', ''))
+                        if preview_text and preview_text.strip():
                             message_preview = preview_text[:45]
-                        else:
-                            # Only fallback to attachment summary if no text
-                            attached_images = parsed.get('attached_images', [])
-                            attached_files = parsed.get('attached_files', [])
-                            
-                            if attached_images and attached_files:
-                                message_preview = f"📎 {len(attached_files)} file(s) + {len(attached_images)} image(s)"
-                            elif attached_images:
-                                message_preview = f"🖼️ {len(attached_images)} image(s)"
-                            elif attached_files:
-                                message_preview = f"📁 {len(attached_files)} file(s)"
-                            else:
-                                message_preview = "Message with attachments"
                     except:
-                        # Fallback - avoid showing base64
-                        if 'base64' in message_content or len(message_content) > 200:
-                            message_preview = "Message with attachments"
-                        else:
-                            message_preview = message_content[:45]
-                else:
-                    # Regular text message
-                    message_preview = message_content[:45]
+                        pass
+                
+                # Check if pure AI_INTERACTION format (text + tags)
+                elif "<AI_INTERACTION_" in message_content:
+                    # Extract text before first AI_INTERACTION tag
+                    text_part = message_content.split("<AI_INTERACTION_")[0].strip()
+                    if text_part:
+                        message_preview = text_part[:45]
+                
+                # Fallback: regular text message
+                if not message_preview:
+                    # Avoid showing base64 or very long content
+                    if 'base64' in message_content or len(message_content) > 1000:
+                        message_preview = "Message with attachments"
+                    else:
+                        message_preview = message_content[:45]
                 
                 if len(message_preview) > 45:
                     message_preview = message_preview[:45] + "..."
@@ -434,36 +453,38 @@ class ControllerUI(QDialog):
                 # Set fixed height for consistent appearance
                 item.setSizeHint(QSize(-1, 28))  # Fixed height of 28px for more items
                 
-                # Set tooltip - prioritize text content with proper truncation
+                # ROBUST tooltip text extraction (consistent with preview)
+                tooltip_message = ""
+                
+                # Check if JSON format (mixed JSON + AI_INTERACTION tags)
                 if message_content.strip().startswith('{'):
                     try:
                         import json
-                        parsed = json.loads(message_content.split("<AI_INTERACTION_CONTINUE_CHAT>")[0].strip())
-                        # Always prioritize text content for tooltip
-                        tooltip_text = parsed.get('text_content') or parsed.get('text', '')
-                        if tooltip_text:
+                        json_part = message_content.split("<AI_INTERACTION_")[0].strip()
+                        parsed = json.loads(json_part)
+                        # Extract text from JSON
+                        tooltip_text = (parsed.get('text_content') or 
+                                      parsed.get('text') or 
+                                      parsed.get('content', ''))
+                        if tooltip_text and tooltip_text.strip():
                             tooltip_message = tooltip_text
-                        else:
-                            # Smart summary only if no text content
-                            attached_images = parsed.get('attached_images', [])
-                            attached_files = parsed.get('attached_files', [])
-                            
-                            tooltip_parts = []
-                            if attached_images:
-                                tooltip_parts.append(f"🖼️ {len(attached_images)} image(s)")
-                            if attached_files:
-                                tooltip_parts.append(f"📁 {len(attached_files)} file(s)")
-                            
-                            tooltip_message = " + ".join(tooltip_parts) if tooltip_parts else "Message with attachments"
                     except:
-                        # Fallback - avoid base64 in tooltip
-                        if 'base64' in message_content or len(message_content) > 150:
-                            tooltip_message = "Message with attachments (click to view details)"
-                        else:
-                            tooltip_message = message_content
-                else:
-                    # Regular text message
-                    tooltip_message = message_content
+                        pass
+                
+                # Check if pure AI_INTERACTION format (text + tags)
+                elif "<AI_INTERACTION_" in message_content:
+                    # Extract text before first AI_INTERACTION tag
+                    text_part = message_content.split("<AI_INTERACTION_")[0].strip()
+                    if text_part:
+                        tooltip_message = text_part
+                
+                # Fallback: regular text message
+                if not tooltip_message:
+                    # Avoid showing base64 or very long content
+                    if 'base64' in message_content or len(message_content) > 300:
+                        tooltip_message = "Message with attachments (click to view details)"
+                    else:
+                        tooltip_message = message_content
                 
                 # Always apply length limit with "..." for consistency
                 if len(tooltip_message) > 150:
@@ -480,10 +501,11 @@ class ControllerUI(QDialog):
                 error_item.setFlags(error_item.flags() & ~Qt.ItemIsEnabled)
                 self.message_queue_widget.addItem(error_item)
         
-        # Auto scroll to bottom if new messages were added
+        # With newest-first sorting, keep current scroll position for better UX
         new_item_count = self.message_queue_widget.count()
         if new_item_count > current_item_count:
-            self.message_queue_widget.scrollToBottom()
+            # New messages appear at top, so scroll to top to show newest
+            self.message_queue_widget.scrollToTop()
         
         # Restore selection
         if selected_message_ids:
@@ -984,37 +1006,47 @@ class ControllerUI(QDialog):
         waiting_agents = data.get("waiting_agents", {})
         
         target_waiting_id = None
+        available_targets = []
         
-        # Find waiting agent that is NOT the sender
+        # Collect all waiting agents that are NOT the sender
         for waiting_id, agent_data in waiting_agents.items():
             agent_id = agent_data.get("agent_id", "")
             status = agent_data.get("status", "")
             
-            # Skip if this is the sender agent or not waiting
-            if agent_id == sender_agent or status != "waiting":
-                continue
-                
-            # This is a different agent that's waiting - perfect target
-            target_waiting_id = waiting_id
-            break
+            # Only consider agents that are waiting
+            if status == "waiting":
+                if agent_id != sender_agent:
+                    # This is a different agent - valid target
+                    available_targets.append(waiting_id)
+                    if target_waiting_id is None:
+                        target_waiting_id = waiting_id
         
-        if not target_waiting_id:
-            # Fallback: any waiting agent (shouldn't be sender)
+        # Validation: Check if we're about to route message to sender (UX improvement)
+        if not available_targets:
+            # Check if only sender is waiting (self-routing scenario)
+            sender_waiting = False
             for waiting_id, agent_data in waiting_agents.items():
-                if agent_data.get("status") == "waiting":
-                    target_waiting_id = waiting_id
+                if (agent_data.get("agent_id") == sender_agent and 
+                    agent_data.get("status") == "waiting"):
+                    sender_waiting = True
                     break
-        
-        if not target_waiting_id:
-            self.status_label.setText("⚠️ No waiting agents available!")
-            self.status_label.setStyleSheet(Styles.get_status_style("warning"))
+            
+            if sender_waiting:
+                # Clear error: Only sender is waiting (would be self-routing)
+                self.status_label.setText(f"🚫 Cannot route message back to sender ({sender_agent})!")
+                self.status_label.setStyleSheet(Styles.get_status_style("error"))
+            else:
+                # No agents waiting at all
+                self.status_label.setText("⚠️ No target agents available for routing!")
+                self.status_label.setStyleSheet(Styles.get_status_style("warning"))
+            
             self.status_reset_timer.start(3000)
             return
         
         # FORMAT MESSAGE WITH CONTINUE_CHAT TAG FOR AGENT-TO-AGENT CONVERSATION FLOW
         formatted_message = self._format_message_for_delivery(message_content, continue_chat=True, source="agent")
         
-        # Deliver automatically
+        # Deliver automatically to first available non-sender agent
         target_agent_data = waiting_agents[target_waiting_id]
         target_agent_id = target_agent_data.get("agent_id", "unknown")
         
@@ -1044,6 +1076,7 @@ class ControllerUI(QDialog):
             return
         
         message_content = self.selected_message.get("message", "")
+        sender_agent = self.selected_message.get("from_agent", "")
         
         # Find waiting agent with matching tool
         data = self.flow_manager.get_controller_data()
@@ -1058,13 +1091,36 @@ class ControllerUI(QDialog):
         if not target_waiting_id:
             QMessageBox.warning(self, "Warning", f"No {target_agent_tool} is currently waiting!")
             return
+        
+        # UX IMPROVEMENT: Prevent self-routing validation
+        agent_id = data["waiting_agents"][target_waiting_id].get("agent_id", "unknown")
+        
+        if agent_id == sender_agent:
+            # Show clear error message for self-routing attempt
+            QMessageBox.critical(
+                self, 
+                "🚫 Self-Routing Not Allowed",
+                f"Cannot deliver message back to the sender!\n\n"
+                f"• Message sender: {sender_agent}\n"
+                f"• Selected target: {agent_id} ({target_agent_tool})\n\n"
+                f"Please choose a different agent or use Smart Delivery to automatically "
+                f"route to another available agent."
+            )
+            
+            # Also show in status bar
+            self.status_label.setText(f"🚫 Blocked self-routing to {sender_agent}")
+            self.status_label.setStyleSheet(Styles.get_status_style("error"))
+            self.status_reset_timer.start(3000)
+            return
 
         # Confirm delivery
-        agent_id = data["waiting_agents"][target_waiting_id].get("agent_id", "unknown")
         reply = QMessageBox.question(
             self,
             "Confirm Delivery",
-            f"Deliver message to {agent_id} ({target_agent_tool})?\n\nMessage: {message_content[:100]}{'...' if len(message_content) > 100 else ''}",
+            f"Deliver message to {agent_id} ({target_agent_tool})?\n\n"
+            f"From: {sender_agent}\n"
+            f"To: {agent_id}\n"
+            f"Message: {message_content[:100]}{'...' if len(message_content) > 100 else ''}",
             QMessageBox.Yes | QMessageBox.No
         )
         
@@ -1080,14 +1136,14 @@ class ControllerUI(QDialog):
                 self.flow_manager.mark_message_delivered(self.selected_message.get("id", ""))
                 
                 # Update status with beautiful success styling
-                self.status_label.setText(f"✅ Message delivered to {agent_id} successfully!")
+                self.status_label.setText(f"✅ Message delivered from {sender_agent} to {agent_id}!")
                 self.status_label.setStyleSheet(Styles.get_status_style("success"))
                 
                 # Reset status after 3 seconds
                 self.status_reset_timer.start(3000)
                 
                 self.refresh_data()
-                self.result = f"Delivered message to {target_waiting_id}"
+                self.result = f"Delivered message from {sender_agent} to {agent_id}"
             else:
                 # Show error in status bar
                 self.status_label.setText(f"❌ Failed to deliver message to {agent_id}")
@@ -1160,7 +1216,6 @@ class ControllerUI(QDialog):
                 if hasattr(self, 'selected_waiting_id'):
                     delattr(self, 'selected_waiting_id')
                 
-                QMessageBox.information(self, "Success", "All data cleared successfully!")
                 self.refresh_data()
                 self.result = "All data cleared"
             except Exception as e:
@@ -1338,18 +1393,6 @@ class ControllerUI(QDialog):
                 success_count = self._send_message_to_both_agents(message, continue_chat)
                 
                 if success_count > 0:
-                    # Show success message
-                    QMessageBox.information(
-                        self,
-                        "AI Chat - Message Broadcast",
-                        f"✅ Message sent to {success_count} agent(s)\n\n"
-                        f"Message: {message[:100]}{'...' if len(message) > 100 else ''}\n\n"
-                        f"Continue Chat: {continue_chat}\n\n"
-                        "The message has been added to the queue and will be delivered "
-                        "to all waiting agents."
-                    )
-                    
-                    # Update status
                     self.status_label.setText(f"📨 Broadcast message sent to {success_count} agent(s)")
                     self.status_label.setStyleSheet(Styles.get_status_style("success"))
                     
@@ -1393,16 +1436,13 @@ class ControllerUI(QDialog):
         for waiting_id, agent_data in waiting_agents.items():
             if agent_data.get("status") == "waiting":
                 try:
-                    # Deliver formatted message to this waiting agent
+                    # Deliver formatted message to this waiting agent (direct delivery, no queue)
                     if self.flow_manager.deliver_message_to_agent(waiting_id, formatted_message):
                         sent_count += 1
                         
-                        # Also add to message queue for tracking
-                        self.flow_manager.add_message_to_queue(
-                            "AI_Chat_Controller",
-                            formatted_message,
-                            waiting_id
-                        )
+                        # NOTE: Admin messages are NOT added to queue - they're delivered directly
+                        # Only agent-to-agent messages need queue for routing
+                        
                 except Exception as e:
                     print(f"Failed to send to {waiting_id}: {str(e)}")
                     continue

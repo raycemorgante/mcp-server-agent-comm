@@ -1,3 +1,22 @@
 {
-  "pending_messages": []
+  "pending_messages": [
+    {
+      "id": "msg_1750842574",
+      "from_agent": "claude_agent_001",
+      "message": "🔒 Test UX improvements - Kiểm tra self-routing prevention cho Smart Delivery và Manual Delivery buttons",
+      "waiting_id": "agent_chat_1_1750842574",
+      "timestamp": "2025-06-25T16:09:34.550387",
+      "delivered": true,
+      "delivered_at": "2025-06-25T16:10:06.766410"
+    },
+    {
+      "id": "msg_1750842577",
+      "from_agent": "agent_002",
+      "message": "Agent 2 đã quay trở lại. Sẵn sàng tiếp tục luồng giao tiếp.",
+      "waiting_id": "agent_chat_2_1750842577",
+      "timestamp": "2025-06-25T16:09:37.610102",
+      "delivered": true,
+      "delivered_at": "2025-06-25T16:10:02.197474"
+    }
+  ]
 }

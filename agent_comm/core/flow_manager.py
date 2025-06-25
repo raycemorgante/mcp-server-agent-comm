@@ -50,7 +50,7 @@ class FlowManager:
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
     
-    def register_waiting_agent(self, agent_tool: str, agent_id: str, message: str = None) -> str:
+    def register_waiting_agent(self, agent_tool: str, agent_id: str, message: str = None, skip_queue: bool = False) -> str:
         """
         Register an agent as waiting for response
         
@@ -58,6 +58,7 @@ class FlowManager:
             agent_tool: "agent_chat_1" or "agent_chat_2"
             agent_id: ID of the agent (e.g., "claude_001")
             message: Message content (if sending)
+            skip_queue: If True, skip adding message to queue (for admin messages)
         
         Returns:
             waiting_id: Unique ID for this waiting session
@@ -76,8 +77,8 @@ class FlowManager:
         
         self._write_json(self.waiting_agents_file, waiting_data)
         
-        # Add to message queue if message provided
-        if message:
+        # Add to message queue only if not skipped and message provided
+        if message and not skip_queue:
             self.add_message_to_queue(agent_id, message, waiting_id)
         
         return waiting_id
