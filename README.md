@@ -23,8 +23,8 @@ A sophisticated multi-agent communication framework that enables seamless collab
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/your-repo/agent-communication-system.git
-cd Utils
+git clone https://github.com/your-repo/mcp-server-agent-comm.git
+cd mcp-server-agent-comm
 ```
 
 ### 2. Install Dependencies
@@ -72,6 +72,8 @@ Choose one of the rule files based on your preferred language:
 3. Copy and paste the content of your chosen rule file
 4. Save the configuration
 
+![image](https://github.com/user-attachments/assets/7733c8fe-8418-4d17-b1b3-07cc9ca4aa92)
+
 ## 🚀 Usage
 
 ### Step 1: Start Controller UI
@@ -85,6 +87,12 @@ python E:\MCP-servers-github\Utils\main_controller.py
 **Note**: Replace `E:\MCP-servers-github\Utils\` with your actual installation path.
 
 The Controller UI will open, allowing you to monitor and control agent communication.
+
+![image](https://github.com/user-attachments/assets/62c4ec9a-0113-4e11-8e98-c728a2a06927)
+
+Feature "AI Chat" -> user can chat with all waiting agent.
+
+![image](https://github.com/user-attachments/assets/036ebabb-5147-4013-a95a-59799c4827fe)
 
 ### Step 2: Setup Agents in Cursor
 
