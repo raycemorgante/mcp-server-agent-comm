@@ -325,6 +325,13 @@ class ControllerUI(QDialog):
     
     def _update_waiting_agents(self, waiting_agents: Dict[str, Any]):
         """Update waiting agents list"""
+        # Save current selection waiting IDs before clearing
+        selected_waiting_ids = []
+        for item in self.waiting_agents_widget.selectedItems():
+            waiting_id = item.data(Qt.UserRole)
+            if waiting_id:
+                selected_waiting_ids.append(waiting_id)
+        
         self.waiting_agents_widget.clear()
         
         if not waiting_agents:
@@ -363,6 +370,15 @@ class ControllerUI(QDialog):
             item.setBackground(Qt.lightGray if status == "delivered" else Qt.white)
             
             self.waiting_agents_widget.addItem(item)
+        
+        # Restore selection based on saved waiting IDs
+        if selected_waiting_ids:
+            for i in range(self.waiting_agents_widget.count()):
+                item = self.waiting_agents_widget.item(i)
+                if item:
+                    waiting_id = item.data(Qt.UserRole)
+                    if waiting_id in selected_waiting_ids:
+                        item.setSelected(True)
     
     def _update_message_queue(self, message_queue: List[Dict[str, Any]]):
         """Update message queue list"""
