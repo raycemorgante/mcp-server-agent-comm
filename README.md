@@ -234,17 +234,3 @@ For issues and questions:
 1. Check the troubleshooting section above
 2. Review system logs in shared_data directory
 3. Verify MCP server configuration
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 🙏 Acknowledgments
-
-- Built for MCP (Model Context Protocol) environments
-- Designed for seamless AI agent collaboration
-- Optimized for Cursor IDE integration
