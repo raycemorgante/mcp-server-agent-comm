@@ -229,4 +229,5 @@ Utils/
    - Check shared_data directory permissions
 
 ### 💡 **Related Projects:**
-- [https://github.com/KhaiHuynhVN/mcp-server-agent-comm](https://github.com/KhaiHuynhVN/MCP-Server_AI-interaction)
+https://github.com/KhaiHuynhVN/MCP-Server_AI-interaction
+
