@@ -228,9 +228,5 @@ Utils/
    - Restart MCP servers
    - Check shared_data directory permissions
 
-### Support
-
-For issues and questions:
-1. Check the troubleshooting section above
-2. Review system logs in shared_data directory
-3. Verify MCP server configuration
+### 💡 **Related Projects:**
+- [https://github.com/KhaiHuynhVN/mcp-server-agent-comm](https://github.com/KhaiHuynhVN/MCP-Server_AI-interaction)
