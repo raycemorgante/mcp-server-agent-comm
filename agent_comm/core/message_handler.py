@@ -12,7 +12,7 @@ class MessageHandler:
     def __init__(self):
         self.state_manager = StateManager()
     
-    def send_message(self, from_agent: str, to_agent: str, message: str, 
+    def send_message(self, from_agent: str, to_agent: str, message: str,
                     agent_name: str = None, agent_type: str = "custom") -> Tuple[bool, str]:
         """
         Send a message from one agent to another
@@ -40,6 +40,53 @@ class MessageHandler:
             
         except Exception as e:
             return False, f"Error sending message: {str(e)}"
+
+    def send_group_message(self, from_agent: str, message: str, participants: List[str]) -> Tuple[bool, str]:
+        """Send a message to a group of participants.
+
+        This creates or reuses a conversation that includes the sender and all
+        participants, then broadcasts the message to every other member. The
+        sender and each recipient are registered (if necessary) and the
+        sender's activity timestamp is updated.
+
+        Args:
+            from_agent: ID of the sending agent.
+            message: Message content to broadcast.
+            participants: List of agent IDs who should participate in the
+                conversation. The sender will automatically be included even if
+                not present in this list.
+
+        Returns:
+            Tuple[bool, str]: Success flag and result message.
+        """
+
+        try:
+            # Ensure all agents are registered
+            self._ensure_agent_registered(from_agent, from_agent, "custom")
+            for participant in participants:
+                self._ensure_agent_registered(participant, participant, "custom")
+
+            # Update sender activity
+            self.state_manager.update_agent_activity(from_agent)
+
+            # Build participant list including sender and remove duplicates
+            conv_participants = list(set(participants + [from_agent]))
+
+            # Find or create conversation with all participants
+            conv_id = self.state_manager.find_conversation(conv_participants)
+            if not conv_id:
+                conv_id = self.state_manager.create_conversation(conv_participants)
+
+            # Add message to conversation
+            msg_id = self.state_manager.add_message(conv_id, from_agent, message)
+
+            return True, (
+                f"Message sent successfully to group. Conversation: {conv_id}, "
+                f"Message: {msg_id}"
+            )
+
+        except Exception as e:
+            return False, f"Error sending group message: {str(e)}"
     
     def check_messages(self, agent_id: str, agent_name: str = None, 
                       agent_type: str = "custom") -> Tuple[bool, str]:
@@ -56,7 +103,7 @@ class MessageHandler:
             # Update agent activity
             self.state_manager.update_agent_activity(agent_id)
             
-            # Get pending messages
+            # Aggregate pending messages across all conversations where agent participates
             pending_messages = self.state_manager.get_pending_messages_for_agent(agent_id)
             
             if not pending_messages:
@@ -67,23 +114,33 @@ class MessageHandler:
             for msg_data in pending_messages:
                 conv_id = msg_data["conversation_id"]
                 message = msg_data["message"]
-                
+
                 # Mark as delivered for this agent
                 self.state_manager.mark_message_delivered(conv_id, message["id"], agent_id)
-                
-                # Format message for display
+
+                # Format message for display with conversation context
                 from_agent = message["from"]
                 content = message["content"]
                 timestamp = message["timestamp"]
-                
-                result_messages.append(f"From {from_agent} ({timestamp}): {content}")
-            
+
+                result_messages.append(
+                    f"[{conv_id}] From {from_agent} ({timestamp}): {content}"
+                )
+
             # Combine all messages
             if len(result_messages) == 1:
-                return True, f"You have a new message:\n\n{result_messages[0]}\n\nPlease respond to this message."
+                return True, (
+                    "You have a new message:\n\n"
+                    f"{result_messages[0]}\n\nPlease respond to this message."
+                )
             else:
-                messages_text = "\n\n".join([f"{i+1}. {msg}" for i, msg in enumerate(result_messages)])
-                return True, f"You have {len(result_messages)} new messages:\n\n{messages_text}\n\nPlease respond to these messages."
+                messages_text = "\n\n".join(
+                    [f"{i + 1}. {msg}" for i, msg in enumerate(result_messages)]
+                )
+                return True, (
+                    f"You have {len(result_messages)} new messages:\n\n"
+                    f"{messages_text}\n\nPlease respond to these messages."
+                )
                 
         except Exception as e:
             return False, f"Error checking messages: {str(e)}"
@@ -239,4 +296,4 @@ class MessageHandler:
         elif "copilot" in agent_id_lower:
             return "copilot"
         else:
-            return "custom" 
+            return "custom"
