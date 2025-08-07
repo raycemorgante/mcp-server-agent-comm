@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Iterable
 
+from .file_scoped_editor import FileScopedEditor
+
 from ..constants import (
     CONVERSATIONS_FILE,
     PENDING_CALLS_FILE, 
@@ -23,6 +25,7 @@ class StateManager:
     def __init__(self):
         self._lock = threading.Lock()
         self._initialize_files()
+        self._editors: Dict[str, FileScopedEditor] = {}
     
     def _initialize_files(self):
         """Initialize JSON files if they don't exist"""
@@ -81,6 +84,14 @@ class StateManager:
             registry[agent_id]["last_active"] = datetime.now().isoformat()
             registry[agent_id]["status"] = "online"
             self._write_json(AGENT_REGISTRY_FILE, registry)
+
+    def bind_editor(self, agent_id: str, editor: FileScopedEditor) -> None:
+        """Bind a file-scoped editor to an agent."""
+        self._editors[agent_id] = editor
+
+    def get_editor(self, agent_id: str) -> Optional[FileScopedEditor]:
+        """Retrieve the editor bound to ``agent_id`` if present."""
+        return self._editors.get(agent_id)
     
     def add_pending_call(self, participants: List[str] | str, message: str = None) -> str:
         """Add a pending tool call involving one or more participants.
@@ -206,5 +217,4 @@ class StateManager:
         for conv_id, conv_data in conversations.items():
             if set(conv_data.get("participants", [])) == participant_set:
                 return conv_id
-
         return None
