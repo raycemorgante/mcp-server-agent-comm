@@ -3,7 +3,12 @@ Agent Chat Tools - Separate tools for Agent 1, Agent 2, and Controller
 """
 
 from typing import Optional
+from pathlib import Path
+from datetime import datetime
+
 from .core.flow_manager import FlowManager
+from .core.state_manager import StateManager
+from .constants import AGENT_REGISTRY_FILE
 
 # Import MCP types for image handling
 try:
@@ -427,6 +432,50 @@ def agent_chat_2_tool(agent_id: str, message: str) -> Union[str, List]:
         )
 
 
+def agent_group_chat_tool(file_agents: List[str], initial_message: str) -> str:
+    """Create file-specific agents and start a group conversation.
+
+    For each provided file path, an agent is registered using the file name as
+    ``agent_id``. Each agent receives editing rights only for its associated
+    file. Afterwards a conversation including all file agents is created and
+    seeded with ``initial_message``.
+
+    Args:
+        file_agents: List of file paths to be represented by agents.
+        initial_message: Initial message broadcast to the group.
+
+    Returns:
+        Result message describing the created conversation or an error.
+    """
+    try:
+        state_manager = StateManager()
+        agent_ids: List[str] = []
+
+        for file_path in file_agents:
+            agent_id = Path(file_path).name
+            agent_ids.append(agent_id)
+
+            # Register the agent and restrict editing to the given file
+            state_manager.register_agent(agent_id, agent_id, "file")
+            registry = state_manager._read_json(AGENT_REGISTRY_FILE)
+            if agent_id in registry:
+                registry[agent_id]["allowed_files"] = [str(Path(file_path).resolve())]
+                registry[agent_id]["last_active"] = datetime.now().isoformat()
+                state_manager._write_json(AGENT_REGISTRY_FILE, registry)
+
+        # Create conversation with all file agents
+        conv_id = state_manager.create_conversation(agent_ids)
+
+        if initial_message:
+            # Seed the conversation with the initial message from controller
+            state_manager.add_message(conv_id, "controller", initial_message)
+
+        return f"Group conversation {conv_id} initialized with agents: {', '.join(agent_ids)}"
+
+    except Exception as e:
+        return f"Error in agent group chat: {str(e)}"
+
+
 def agent_controller_tool() -> str:
     """
     Agent Controller Tool - Main UI for User to control message flow
@@ -506,6 +555,6 @@ def clear_all_flow_data() -> str:
         flow_manager = FlowManager()
         flow_manager.clear_all_data()
         return "All flow data cleared successfully."
-        
+
     except Exception as e:
-        return f"Error clearing all flow data: {str(e)}" 
+        return f"Error clearing all flow data: {str(e)}"
