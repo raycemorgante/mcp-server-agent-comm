@@ -82,21 +82,36 @@ class StateManager:
             registry[agent_id]["status"] = "online"
             self._write_json(AGENT_REGISTRY_FILE, registry)
     
-    def add_pending_call(self, agent_id: str, message: str = None):
-        """Add a pending tool call"""
+    def add_pending_call(self, participants: List[str] | str, message: str = None) -> str:
+        """Add a pending tool call involving one or more participants.
+
+        Args:
+            participants: Single agent ID or list of IDs participating in the
+                call.
+            message: Optional message associated with the call.
+
+        Returns:
+            Unique call ID for the pending call.
+        """
+        if isinstance(participants, str):
+            participants = [participants]
+
         pending = self._read_json(PENDING_CALLS_FILE)
-        pending[agent_id] = {
+        call_id = f"call_{int(time.time()*1000)}"
+        pending[call_id] = {
+            "participants": list(participants),
             "message": message,
             "timestamp": datetime.now().isoformat(),
             "waiting": True
         }
         self._write_json(PENDING_CALLS_FILE, pending)
-    
-    def remove_pending_call(self, agent_id: str):
-        """Remove pending tool call"""
+        return call_id
+
+    def remove_pending_call(self, call_id: str):
+        """Remove pending tool call by call ID"""
         pending = self._read_json(PENDING_CALLS_FILE)
-        if agent_id in pending:
-            del pending[agent_id]
+        if call_id in pending:
+            del pending[call_id]
             self._write_json(PENDING_CALLS_FILE, pending)
     
     def get_pending_calls(self) -> Dict[str, Any]:

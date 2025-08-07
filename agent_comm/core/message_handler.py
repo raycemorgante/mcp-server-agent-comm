@@ -226,20 +226,23 @@ class MessageHandler:
         """
         try:
             pending_calls = self.state_manager.get_pending_calls()
-            
+
             if not pending_calls:
                 return True, "No pending tool calls."
-            
+
             # Format pending calls
             pending_list = []
-            for agent_id, call_info in pending_calls.items():
+            for call_id, call_info in pending_calls.items():
+                participants = ", ".join(call_info.get("participants", []))
                 message = call_info.get("message", "No message")
                 timestamp = call_info.get("timestamp", "unknown")
-                
-                pending_list.append(f"• {agent_id}: {message[:50]}{'...' if len(message) > 50 else ''} ({timestamp})")
-            
+
+                pending_list.append(
+                    f"• {call_id} [{participants}]: {message[:50]}{'...' if len(message) > 50 else ''} ({timestamp})"
+                )
+
             pending_text = "\n".join(pending_list)
-            
+
             return True, f"Pending tool calls ({len(pending_calls)}):\n\n{pending_text}"
             
         except Exception as e:

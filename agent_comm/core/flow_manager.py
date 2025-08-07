@@ -50,64 +50,96 @@ class FlowManager:
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
     
-    def register_waiting_agent(self, agent_tool: str, agent_id: str, message: str = None, skip_queue: bool = False) -> str:
-        """
-        Register an agent as waiting for response
-        
-        Args:
-            agent_tool: "agent_chat_1" or "agent_chat_2"
-            agent_id: ID of the agent (e.g., "claude_001")
-            message: Message content (if sending)
-            skip_queue: If True, skip adding message to queue (for admin messages)
-        
-        Returns:
-            waiting_id: Unique ID for this waiting session
-        """
+    def register_waiting_agent(
+        self,
+        agent_tool: str,
+        agent_id: str,
+        message: str = None,
+        participants: Optional[List[str]] = None,
+        conversation_id: Optional[str] = None,
+        skip_queue: bool = False,
+    ) -> str:
+        """Register an agent as waiting and associate with a conversation"""
         waiting_data = self._read_json(self.waiting_agents_file)
-        
+
+        if participants is None:
+            participants = [agent_id]
+
+        if conversation_id is None:
+            conversation_id = f"conv_{int(time.time())}"
+
+        # Update conversation tracking
+        conv_data = self._read_json(self.conversation_flow_file)
+        conv_list = conv_data.get("active_conversations", [])
+        existing = next((c for c in conv_list if c.get("conversation_id") == conversation_id), None)
+        if existing:
+            existing_participants = set(existing.get("participants", []))
+            existing_participants.update(participants)
+            existing["participants"] = list(existing_participants)
+            existing["last_update"] = datetime.now().isoformat()
+        else:
+            conv_list.append(
+                {
+                    "conversation_id": conversation_id,
+                    "participants": list(participants),
+                    "created_at": datetime.now().isoformat(),
+                    "last_update": datetime.now().isoformat(),
+                }
+            )
+        conv_data["active_conversations"] = conv_list
+        self._write_json(self.conversation_flow_file, conv_data)
+
         waiting_id = f"{agent_tool}_{int(time.time())}"
-        
+
         waiting_data[waiting_id] = {
             "agent_tool": agent_tool,
             "agent_id": agent_id,
+            "conversation_id": conversation_id,
+            "participants": list(participants),
             "message": message,
             "timestamp": datetime.now().isoformat(),
-            "status": "waiting"
+            "status": "waiting",
         }
-        
+
         self._write_json(self.waiting_agents_file, waiting_data)
-        
-        # Add to message queue only if not skipped and message provided
+
         if message and not skip_queue:
-            self.add_message_to_queue(agent_id, message, waiting_id)
-        
+            self.add_message_to_queue(conversation_id, agent_id, message, participants, waiting_id)
+
         return waiting_id
-    
-    def add_message_to_queue(self, from_agent: str, message: str, waiting_id: str):
-        """Add message to queue for delivery"""
+
+    def add_message_to_queue(
+        self,
+        conversation_id: str,
+        from_agent: str,
+        message: str,
+        participants: List[str],
+        waiting_id: Optional[str] = None,
+    ):
+        """Add message to queue for delivery within a conversation"""
         queue_data = self._read_json(self.message_queue_file)
-        
-        # Ensure queue data structure exists
-        if "pending_messages" not in queue_data:
+
+        if "pending_messages" not in queue_data or not isinstance(
+            queue_data.get("pending_messages"), list
+        ):
             queue_data["pending_messages"] = []
-        
-        # Ensure pending_messages is a list
-        if not isinstance(queue_data["pending_messages"], list):
-            queue_data["pending_messages"] = []
-        
+
+        targets = [p for p in participants if p != from_agent]
         message_entry = {
             "id": f"msg_{int(time.time())}",
+            "conversation_id": conversation_id,
             "from_agent": from_agent,
             "message": message,
-            "waiting_id": waiting_id,
+            "targets": targets,
             "timestamp": datetime.now().isoformat(),
-            "delivered": False
+            "delivered": {t: False for t in targets},
         }
-        
+        if waiting_id:
+            message_entry["waiting_id"] = waiting_id
+
         queue_data["pending_messages"].append(message_entry)
-        
         self._write_json(self.message_queue_file, queue_data)
-    
+
     def get_waiting_agents(self) -> Dict[str, Any]:
         """Get all agents currently waiting"""
         return self._read_json(self.waiting_agents_file)
@@ -149,17 +181,52 @@ class FlowManager:
             del waiting_data[waiting_id]
             self._write_json(self.waiting_agents_file, waiting_data)
     
-    def mark_message_delivered(self, message_id: str):
-        """Mark message as delivered in queue"""
+    def mark_message_delivered(self, message_id: str, agent_ids: Optional[List[str]] = None):
+        """Mark message as delivered for specified agents"""
         queue_data = self._read_json(self.message_queue_file)
-        
-        for msg in queue_data["pending_messages"]:
-            if msg["id"] == message_id:
-                msg["delivered"] = True
-                msg["delivered_at"] = datetime.now().isoformat()
+
+        for msg in queue_data.get("pending_messages", []):
+            if msg.get("id") == message_id:
+                delivered = msg.setdefault("delivered", {})
+                if agent_ids is None:
+                    agent_ids = list(delivered.keys())
+                for agent in agent_ids:
+                    if agent in delivered:
+                        delivered[agent] = True
+                msg["delivered_all"] = all(delivered.values()) if delivered else True
+                if msg["delivered_all"]:
+                    msg["delivered_at"] = datetime.now().isoformat()
                 break
-        
+
         self._write_json(self.message_queue_file, queue_data)
+
+    def deliver_message_to_participants(
+        self,
+        conversation_id: str,
+        agent_ids: List[str],
+        message_content: str,
+        message_id: str,
+    ) -> bool:
+        """Deliver message content to specified participants"""
+        waiting_data = self._read_json(self.waiting_agents_file)
+        delivered_any = False
+
+        for waiting_id, agent_data in waiting_data.items():
+            if (
+                agent_data.get("conversation_id") == conversation_id
+                and agent_data.get("agent_id") in agent_ids
+                and agent_data.get("status") == "waiting"
+            ):
+                agent_data["status"] = "delivered"
+                agent_data["delivered_message"] = message_content
+                agent_data["delivered_at"] = datetime.now().isoformat()
+                delivered_any = True
+
+        if delivered_any:
+            self._write_json(self.waiting_agents_file, waiting_data)
+            self.mark_message_delivered(message_id, agent_ids)
+
+        return delivered_any
     
     def get_agent_status(self, waiting_id: str) -> Optional[Dict[str, Any]]:
         """Get status of specific waiting agent"""
@@ -191,10 +258,20 @@ class FlowManager:
             
             time.sleep(1)  # Check every second
     
+    def get_conversations(self) -> Dict[str, Any]:
+        """Return active conversations with participant lists"""
+        conv_data = self._read_json(self.conversation_flow_file)
+        conversations = {}
+        for conv in conv_data.get("active_conversations", []):
+            conv_id = conv.get("conversation_id")
+            if conv_id:
+                conversations[conv_id] = conv
+        return conversations
+
     def get_controller_data(self) -> Dict[str, Any]:
         """Get all data needed for controller UI"""
         return {
-            "waiting_agents": self.get_waiting_agents(),
+            "conversations": self.get_conversations(),
             "message_queue": self.get_message_queue(),
             "timestamp": datetime.now().isoformat()
         }
