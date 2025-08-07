@@ -7,7 +7,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Iterable
 
 from ..constants import (
     CONVERSATIONS_FILE,
@@ -103,50 +103,45 @@ class StateManager:
         """Get all pending calls"""
         return self._read_json(PENDING_CALLS_FILE)
     
-    def create_conversation(self, agent1: str, agent2: str) -> str:
-        """Create new conversation between two agents"""
-        conv_id = f"{agent1}_{agent2}_{int(time.time())}"
+    def create_conversation(self, participants: List[str]) -> str:
+        """Create new conversation between agents"""
+        conv_id = f"{'_'.join(sorted(participants))}_{int(time.time())}"
         conversations = self._read_json(CONVERSATIONS_FILE)
-        
+
         conversations[conv_id] = {
-            "participants": [agent1, agent2],
+            "participants": list(participants),
             "created_at": datetime.now().isoformat(),
             "last_update": datetime.now().isoformat(),
             "message_count": 0,
             "messages": []
         }
-        
+
         self._write_json(CONVERSATIONS_FILE, conversations)
         return conv_id
-    
-    def add_message(self, conv_id: str, from_agent: str, to_agent: str, message: str) -> str:
-        """Add message to conversation"""
+
+    def add_message(self, conv_id: str, from_agent: str, message: str) -> str:
+        """Add message to conversation and broadcast to all participants"""
         conversations = self._read_json(CONVERSATIONS_FILE)
-        
+
         if conv_id not in conversations:
-            # Auto-create conversation if not exists
-            conversations[conv_id] = {
-                "participants": [from_agent, to_agent],
-                "created_at": datetime.now().isoformat(),
-                "last_update": datetime.now().isoformat(),
-                "message_count": 0,
-                "messages": []
-            }
-        
+            raise ValueError(f"Conversation {conv_id} not found")
+
+        participants = conversations[conv_id]["participants"]
+        recipients = [p for p in participants if p != from_agent]
+
         msg_id = f"msg_{len(conversations[conv_id]['messages']) + 1}"
         new_message = {
             "id": msg_id,
             "from": from_agent,
-            "to": to_agent,
             "content": message,
             "timestamp": datetime.now().isoformat(),
-            "status": MESSAGE_STATUS["PENDING"]
+            "status": {recipient: MESSAGE_STATUS["PENDING"] for recipient in recipients}
         }
-        
+
         conversations[conv_id]["messages"].append(new_message)
         conversations[conv_id]["message_count"] += 1
         conversations[conv_id]["last_update"] = datetime.now().isoformat()
-        
+
         self._write_json(CONVERSATIONS_FILE, conversations)
         return msg_id
     
@@ -163,37 +158,38 @@ class StateManager:
         """Get all pending messages for specific agent"""
         conversations = self._read_json(CONVERSATIONS_FILE)
         pending_messages = []
-        
+
         for conv_id, conv_data in conversations.items():
             for message in conv_data["messages"]:
-                if (message["to"] == agent_id and 
-                    message["status"] == MESSAGE_STATUS["PENDING"]):
+                status = message.get("status", {})
+                if status.get(agent_id) == MESSAGE_STATUS["PENDING"]:
                     pending_messages.append({
                         "conversation_id": conv_id,
                         "message": message
                     })
-        
+
         return pending_messages
     
-    def mark_message_delivered(self, conv_id: str, message_id: str):
-        """Mark message as delivered"""
+    def mark_message_delivered(self, conv_id: str, message_id: str, agent_id: str):
+        """Mark message as delivered for a specific agent"""
         conversations = self._read_json(CONVERSATIONS_FILE)
-        
+
         if conv_id in conversations:
             for message in conversations[conv_id]["messages"]:
                 if message["id"] == message_id:
-                    message["status"] = MESSAGE_STATUS["DELIVERED"]
+                    if agent_id in message.get("status", {}):
+                        message["status"][agent_id] = MESSAGE_STATUS["DELIVERED"]
                     break
-            
+
             self._write_json(CONVERSATIONS_FILE, conversations)
-    
-    def find_conversation_between_agents(self, agent1: str, agent2: str) -> Optional[str]:
-        """Find existing conversation between two agents"""
+
+    def find_conversation(self, participants: Iterable[str]) -> Optional[str]:
+        """Find existing conversation by participant set"""
+        participant_set = set(participants)
         conversations = self._read_json(CONVERSATIONS_FILE)
-        
+
         for conv_id, conv_data in conversations.items():
-            participants = conv_data["participants"]
-            if (agent1 in participants and agent2 in participants):
+            if set(conv_data.get("participants", [])) == participant_set:
                 return conv_id
-        
-        return None 
+
+        return None
