@@ -29,12 +29,12 @@ class MessageHandler:
             self.state_manager.update_agent_activity(from_agent)
             
             # Find or create conversation
-            conv_id = self.state_manager.find_conversation_between_agents(from_agent, to_agent)
+            conv_id = self.state_manager.find_conversation([from_agent, to_agent])
             if not conv_id:
-                conv_id = self.state_manager.create_conversation(from_agent, to_agent)
-            
+                conv_id = self.state_manager.create_conversation([from_agent, to_agent])
+
             # Add message to conversation
-            msg_id = self.state_manager.add_message(conv_id, from_agent, to_agent, message)
+            msg_id = self.state_manager.add_message(conv_id, from_agent, message)
             
             return True, f"Message sent successfully to {to_agent}. Conversation: {conv_id}, Message: {msg_id}"
             
@@ -68,8 +68,8 @@ class MessageHandler:
                 conv_id = msg_data["conversation_id"]
                 message = msg_data["message"]
                 
-                # Mark as delivered
-                self.state_manager.mark_message_delivered(conv_id, message["id"])
+                # Mark as delivered for this agent
+                self.state_manager.mark_message_delivered(conv_id, message["id"], agent_id)
                 
                 # Format message for display
                 from_agent = message["from"]
@@ -96,7 +96,7 @@ class MessageHandler:
             Tuple of (success: bool, formatted_conversation: str)
         """
         try:
-            conv_id = self.state_manager.find_conversation_between_agents(agent1, agent2)
+            conv_id = self.state_manager.find_conversation([agent1, agent2])
             if not conv_id:
                 return True, f"No conversation found between {agent1} and {agent2}."
             
@@ -118,8 +118,9 @@ class MessageHandler:
                 from_agent = msg["from"]
                 content = msg["content"]
                 timestamp = msg["timestamp"]
-                status = msg["status"]
-                
+                status_dict = msg.get("status", {})
+                status = ", ".join(f"{k}:{v}" for k, v in status_dict.items())
+
                 formatted_messages.append(f"[{timestamp}] {from_agent}: {content} [{status}]")
             
             conversation_text = "\n".join(formatted_messages)

@@ -5,6 +5,7 @@ Conversation Manager - Handles conversation flow and logic
 from typing import Dict, List, Any, Optional, Tuple
 from .state_manager import StateManager
 from .message_handler import MessageHandler
+from ..constants import MESSAGE_STATUS
 
 
 class ConversationManager:
@@ -22,22 +23,23 @@ class ConversationManager:
             Tuple of (success: bool, result_message: str)
         """
         try:
+            participants = [agent1, agent2]
             # Check if conversation already exists
-            existing_conv = self.state_manager.find_conversation_between_agents(agent1, agent2)
-            
+            existing_conv = self.state_manager.find_conversation(participants)
+
             if existing_conv:
                 return True, f"Conversation already exists between {agent1} and {agent2}: {existing_conv}"
-            
+
             # Create new conversation
-            conv_id = self.state_manager.create_conversation(agent1, agent2)
-            
+            conv_id = self.state_manager.create_conversation(participants)
+
             # Add initial message if provided
             if initial_message:
-                self.state_manager.add_message(conv_id, agent1, agent2, initial_message)
-                return True, f"New conversation started: {conv_id}. Initial message sent from {agent1} to {agent2}."
+                self.state_manager.add_message(conv_id, agent1, initial_message)
+                return True, f"New conversation started: {conv_id}. Initial message sent from {agent1}."
             else:
                 return True, f"New conversation started: {conv_id} between {agent1} and {agent2}."
-                
+
         except Exception as e:
             return False, f"Error starting conversation: {str(e)}"
     
@@ -72,8 +74,13 @@ class ConversationManager:
                     "timestamp": last_msg.get("timestamp")
                 }
                 
-                # Count pending messages
-                pending_count = sum(1 for msg in messages if msg.get("status") == "pending")
+                # Count pending message deliveries
+                pending_count = sum(
+                    1
+                    for msg in messages
+                    for status in msg.get("status", {}).values()
+                    if status == MESSAGE_STATUS["PENDING"]
+                )
                 summary["pending_messages"] = pending_count
             
             return True, summary
@@ -143,16 +150,18 @@ class ConversationManager:
                     
                     messages = conv_data.get("messages", [])
                     sent_count = sum(1 for msg in messages if msg.get("from") == agent_id)
-                    received_count = sum(1 for msg in messages if msg.get("to") == agent_id)
-                    pending_count = sum(1 for msg in messages if msg.get("to") == agent_id and msg.get("status") == "pending")
-                    
+                    received_count = sum(1 for msg in messages if agent_id in msg.get("status", {}))
+                    pending_count = sum(
+                        1 for msg in messages if msg.get("status", {}).get(agent_id) == MESSAGE_STATUS["PENDING"]
+                    )
+
                     activity["total_messages_sent"] += sent_count
                     activity["total_messages_received"] += received_count
                     activity["pending_messages"] += pending_count
-                    
+
                     # Add to active conversations if has recent activity
                     if messages:  # Has messages
-                        other_participant = [p for p in participants if p != agent_id][0] if len(participants) == 2 else "Unknown"
+                        other_participant = ", ".join([p for p in participants if p != agent_id])
                         activity["active_conversations"].append({
                             "conversation_id": conv_id,
                             "with_agent": other_participant,
@@ -246,8 +255,9 @@ class ConversationManager:
             from_agent = msg.get("from", "Unknown")
             content = msg.get("content", "")
             timestamp = msg.get("timestamp", "Unknown")
-            status = msg.get("status", "unknown")
-            
+            status_dict = msg.get("status", {})
+            status = ", ".join(f"{agent}:{state}" for agent, state in status_dict.items())
+
             lines.append(f"[{timestamp}] {from_agent} ({status}):")
             lines.append(f"  {content}")
             lines.append("")
