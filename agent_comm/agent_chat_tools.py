@@ -5,10 +5,15 @@ Agent Chat Tools - Separate tools for Agent 1, Agent 2, and Controller
 from typing import Optional
 from pathlib import Path
 from datetime import datetime
+import logging
 
 from .core.flow_manager import FlowManager
 from .core.state_manager import StateManager
+from .core.file_scoped_editor import FileScopedEditor
 from .constants import AGENT_REGISTRY_FILE
+
+
+logger = logging.getLogger(__name__)
 
 # Import MCP types for image handling
 try:
@@ -459,9 +464,15 @@ def agent_group_chat_tool(file_agents: List[str], initial_message: str) -> str:
             state_manager.register_agent(agent_id, agent_id, "file")
             registry = state_manager._read_json(AGENT_REGISTRY_FILE)
             if agent_id in registry:
-                registry[agent_id]["allowed_files"] = [str(Path(file_path).resolve())]
+                resolved = str(Path(file_path).resolve())
+                registry[agent_id]["allowed_files"] = [resolved]
                 registry[agent_id]["last_active"] = datetime.now().isoformat()
                 state_manager._write_json(AGENT_REGISTRY_FILE, registry)
+
+            # Bind editor restricted to this file
+            editor = FileScopedEditor(file_path, agent_id)
+            state_manager.bind_editor(agent_id, editor)
+            logger.info("Bound agent %s to editor for %s", agent_id, file_path)
 
         # Create conversation with all file agents
         conv_id = state_manager.create_conversation(agent_ids)
