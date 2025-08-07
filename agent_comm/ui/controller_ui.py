@@ -27,9 +27,10 @@ class ControllerUI(QDialog):
         self.config_manager = ConfigManager()
         self.result = None
         
-        self.waiting_agents_widget = None
+        self.conversations_widget = None
         self.message_queue_widget = None
         self.detail_display = None
+        self.current_conversations = {}
         
         self.init_ui()
         self.setup_timer()
@@ -66,8 +67,8 @@ class ControllerUI(QDialog):
         message_queue_panel = self._create_message_queue_panel()
         splitter.addWidget(message_queue_panel)
         
-        # Column 2 - Waiting Agents
-        agents_panel = self._create_waiting_agents_panel()
+        # Column 2 - Conversations
+        agents_panel = self._create_conversations_panel()
         splitter.addWidget(agents_panel)
         
         # Column 3 - Message Details
@@ -182,48 +183,31 @@ class ControllerUI(QDialog):
         
         return panel
     
-    def _create_waiting_agents_panel(self) -> QWidget:
-        """Create waiting agents panel"""
+    def _create_conversations_panel(self) -> QWidget:
+        """Create conversations panel"""
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
-        
-        # Custom header
-        header_label = QLabel("Waiting Agents")
+
+        header_label = QLabel("Conversations")
         header_label.setStyleSheet(Styles.get_column_header_style())
         layout.addWidget(header_label)
-        
-        # Content group box
+
         content_group = QGroupBox()
         content_group.setStyleSheet(STYLE_PRESETS["waiting_agents_panel"]["group_box"])
         content_layout = QVBoxLayout(content_group)
         content_layout.setContentsMargins(8, 4, 8, 8)
-        
-        # Instructions with beautiful styling
-        info_label = QLabel("Agents waiting for messages:")
+
+        info_label = QLabel("Active conversations:")
         info_label.setStyleSheet(STYLE_PRESETS["waiting_agents_panel"]["instruction_label"])
         content_layout.addWidget(info_label)
-        
-        # Waiting agents list with dark theme
-        self.waiting_agents_widget = QListWidget()
-        self.waiting_agents_widget.itemClicked.connect(self._on_waiting_agent_selected)
-        self.waiting_agents_widget.setStyleSheet(STYLE_PRESETS["waiting_agents_panel"]["list_widget"])
-        content_layout.addWidget(self.waiting_agents_widget)
-        
-        # Beautiful smart delivery action
-        action_layout = QHBoxLayout()
-        
-        self.smart_delivery_btn = QPushButton("🚀 Smart Delivery")
-        self.smart_delivery_btn.clicked.connect(self.smart_delivery_latest_message)
-        self.smart_delivery_btn.setEnabled(False)
-        self.smart_delivery_btn.setStyleSheet(STYLE_PRESETS["waiting_agents_panel"]["smart_delivery_btn"])
-        action_layout.addWidget(self.smart_delivery_btn)
-        
-        content_layout.addLayout(action_layout)
-        
+
+        self.conversations_widget = QListWidget()
+        self.conversations_widget.setStyleSheet(STYLE_PRESETS["waiting_agents_panel"]["list_widget"])
+        content_layout.addWidget(self.conversations_widget)
+
         layout.addWidget(content_group)
-        
         return panel
     
     def _create_message_details_panel(self) -> QWidget:
@@ -252,26 +236,33 @@ class ControllerUI(QDialog):
         # Message content display with dark theme
         self.detail_display = QTextEdit()
         self.detail_display.setReadOnly(True)
-        self.detail_display.setPlainText("Select a message or waiting agent to view details")
+        self.detail_display.setPlainText("Select a message to view details")
         self.detail_display.setStyleSheet(STYLE_PRESETS["message_details_panel"]["text_edit"])
         content_layout.addWidget(self.detail_display)
         
-        # Beautiful delivery actions
+        # Participants list
+        self.participants_list = QListWidget()
+        self.participants_list.setSelectionMode(QListWidget.MultiSelection)
+        self.participants_list.itemSelectionChanged.connect(self._on_participant_selection)
+        self.participants_list.setStyleSheet(STYLE_PRESETS["waiting_agents_panel"]["list_widget"])
+        content_layout.addWidget(self.participants_list)
+
+        # Delivery actions
         delivery_layout = QHBoxLayout()
         delivery_layout.setSpacing(8)
-        
-        self.deliver_to_1_btn = QPushButton("📤 Send to Agent 1")
-        self.deliver_to_1_btn.clicked.connect(lambda: self.deliver_selected_message("agent_chat_1"))
+
+        self.deliver_to_1_btn = QPushButton("📡 Broadcast")
+        self.deliver_to_1_btn.clicked.connect(self.broadcast_message)
         self.deliver_to_1_btn.setEnabled(False)
         self.deliver_to_1_btn.setStyleSheet(STYLE_PRESETS["message_details_panel"]["agent_1_btn"])
         delivery_layout.addWidget(self.deliver_to_1_btn)
-        
-        self.deliver_to_2_btn = QPushButton("📤 Send to Agent 2")
-        self.deliver_to_2_btn.clicked.connect(lambda: self.deliver_selected_message("agent_chat_2"))
+
+        self.deliver_to_2_btn = QPushButton("🎯 Send Selected")
+        self.deliver_to_2_btn.clicked.connect(self.send_selected_message)
         self.deliver_to_2_btn.setEnabled(False)
         self.deliver_to_2_btn.setStyleSheet(STYLE_PRESETS["message_details_panel"]["agent_2_btn"])
         delivery_layout.addWidget(self.deliver_to_2_btn)
-        
+
         content_layout.addLayout(delivery_layout)
         
         layout.addWidget(content_group)
@@ -286,22 +277,20 @@ class ControllerUI(QDialog):
             data = self.flow_manager.get_controller_data()
             
             # Safely get data with defaults
-            waiting_agents = data.get("waiting_agents", {})
+            conversations = data.get("conversations", {})
             message_queue = data.get("message_queue", [])
             timestamp = data.get("timestamp", "")
-            
-            # Update UI components
-            self._update_waiting_agents(waiting_agents)
+
+            self.current_conversations = conversations or {}
+            self._update_conversations(conversations)
             self._update_message_queue(message_queue)
-            
-            # Update status
-            waiting_count = len(waiting_agents) if waiting_agents else 0
+
+            conv_count = len(conversations) if conversations else 0
             queue_count = len(message_queue) if message_queue else 0
-            
-            # Format timestamp safely
+
             timestamp_display = timestamp[:19] if timestamp and len(timestamp) >= 19 else "Unknown"
-            
-            self.status_label.setText(f"📊 {waiting_count} waiting agents • {queue_count} pending messages • Last update: {timestamp_display}")
+
+            self.status_label.setText(f"📊 {conv_count} conversations • {queue_count} pending messages • Last update: {timestamp_display}")
             
         except Exception as e:
             # Handle errors gracefully without spam
@@ -311,11 +300,11 @@ class ControllerUI(QDialog):
             self.status_label.setText(f"❌ Error: {error_msg}")
             
             # Clear UI widgets to prevent display of stale data
-            if hasattr(self, 'waiting_agents_widget') and self.waiting_agents_widget:
-                self.waiting_agents_widget.clear()
-                item = QListWidgetItem("Error loading waiting agents")
+            if hasattr(self, 'conversations_widget') and self.conversations_widget:
+                self.conversations_widget.clear()
+                item = QListWidgetItem("Error loading conversations")
                 item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
-                self.waiting_agents_widget.addItem(item)
+                self.conversations_widget.addItem(item)
                 
             if hasattr(self, 'message_queue_widget') and self.message_queue_widget:
                 self.message_queue_widget.clear()
@@ -323,63 +312,39 @@ class ControllerUI(QDialog):
                 item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
                 self.message_queue_widget.addItem(item)
     
-    def _update_waiting_agents(self, waiting_agents: Dict[str, Any]):
-        """Update waiting agents list"""
-        # Save current selection waiting IDs before clearing
-        selected_waiting_ids = []
-        for item in self.waiting_agents_widget.selectedItems():
-            waiting_id = item.data(Qt.UserRole)
-            if waiting_id:
-                selected_waiting_ids.append(waiting_id)
-        
-        self.waiting_agents_widget.clear()
-        
-        if not waiting_agents:
-            item = QListWidgetItem("No agents currently waiting")
+    def _update_conversations(self, conversations: Dict[str, Any]):
+        """Update conversations list"""
+        selected_ids = []
+        for item in self.conversations_widget.selectedItems():
+            conv_id = item.data(Qt.UserRole)
+            if conv_id:
+                selected_ids.append(conv_id)
+
+        self.conversations_widget.clear()
+
+        if not conversations:
+            item = QListWidgetItem("No active conversations")
             item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
-            self.waiting_agents_widget.addItem(item)
+            self.conversations_widget.addItem(item)
             return
-        
-        # Sort agents by timestamp descending (newest first) for better UX
+
         try:
-            sorted_agents = sorted(waiting_agents.items(), 
-                                 key=lambda x: x[1].get("timestamp", ""), 
-                                 reverse=True)
-        except:
-            # Fallback if sorting fails
-            sorted_agents = waiting_agents.items()
-        
-        for waiting_id, agent_data in sorted_agents:
-            agent_tool = agent_data.get("agent_tool", "unknown").strip()
-            agent_id = agent_data.get("agent_id", "unknown")
-            status = agent_data.get("status", "unknown")
-            timestamp = agent_data.get("timestamp", "")[:19]
-            
-            # Format display text
-            if agent_tool == "agent_chat_1":
-                icon = "🤖1"
-                color = "#FF6B6B"
-            else:
-                icon = "🤖2" 
-                color = "#4ECDC4"
-            
-            display_text = f"{icon} {agent_id} ({status}) - {timestamp}"
-            
-            item = QListWidgetItem(display_text)
-            item.setData(Qt.UserRole, waiting_id)
-            item.setBackground(Qt.lightGray if status == "delivered" else Qt.white)
-            
-            self.waiting_agents_widget.addItem(item)
-        
-        # Restore selection based on saved waiting IDs
-        if selected_waiting_ids:
-            for i in range(self.waiting_agents_widget.count()):
-                item = self.waiting_agents_widget.item(i)
-                if item:
-                    waiting_id = item.data(Qt.UserRole)
-                    if waiting_id in selected_waiting_ids:
-                        item.setSelected(True)
-    
+            sorted_convs = sorted(conversations.items(), key=lambda x: x[1].get("last_update", ""), reverse=True)
+        except Exception:
+            sorted_convs = conversations.items()
+
+        for conv_id, conv_data in sorted_convs:
+            participants = ", ".join(conv_data.get("participants", []))
+            item = QListWidgetItem(f"{conv_id}: {participants}")
+            item.setData(Qt.UserRole, conv_id)
+            self.conversations_widget.addItem(item)
+
+        if selected_ids:
+            for i in range(self.conversations_widget.count()):
+                item = self.conversations_widget.item(i)
+                if item and item.data(Qt.UserRole) in selected_ids:
+                    item.setSelected(True)
+
     def _update_message_queue(self, message_queue: List[Dict[str, Any]]):
         """Update message queue list"""
         # Store current scroll position and selection
@@ -416,7 +381,7 @@ class ControllerUI(QDialog):
             try:
                 # Safely extract message data with defaults
                 from_agent = msg.get("from_agent", "unknown") if msg else "unknown"
-                delivered = msg.get("delivered", False) if msg else False
+                delivered = msg.get("delivered_all", False) if msg else False
                 timestamp = msg.get("timestamp", "") if msg else ""
                 message_content = msg.get("message", "") if msg else ""
                 
@@ -460,7 +425,8 @@ class ControllerUI(QDialog):
                     message_preview = message_preview[:45] + "..."
                 
                 status_icon = "✅" if delivered else "⏳"
-                display_text = f"{status_icon} From {from_agent}: {message_preview}"
+                conv_id = msg.get("conversation_id", "") if msg else ""
+                display_text = f"{status_icon} [{conv_id}] From {from_agent}: {message_preview}"
                 
                 item = QListWidgetItem(display_text)
                 item.setData(Qt.UserRole, msg)
@@ -535,74 +501,6 @@ class ControllerUI(QDialog):
         # Update delete button state
         self._update_delete_button_state()
     
-    def _on_waiting_agent_selected(self, item: QListWidgetItem):
-        """Handle waiting agent selection and show latest message from this agent"""
-        waiting_id = item.data(Qt.UserRole)
-        if waiting_id:
-            self.smart_delivery_btn.setEnabled(True)
-            self.selected_waiting_id = waiting_id
-            
-            # Get agent data
-            data = self.flow_manager.get_controller_data()
-            agent_data = data["waiting_agents"].get(waiting_id, {})
-            agent_id = agent_data.get("agent_id", "unknown")
-            
-            # Find latest message from this agent
-            messages = data.get("message_queue", [])
-            agent_messages = [msg for msg in messages if msg.get("from_agent") == agent_id]
-            
-            if agent_messages:
-                # Get the most recent message from this agent
-                latest_message = max(agent_messages, 
-                                   key=lambda x: x.get("timestamp", ""), 
-                                   default=agent_messages[-1])
-                
-                # Show latest message details
-                details = [
-                    f"🤖 Agent: {agent_id}",
-                    f"🔧 Tool: {agent_data.get('agent_tool', 'unknown')}",
-                    f"⏱️ Status: {agent_data.get('status', 'unknown')}",
-                    f"📅 Agent Waiting Since: {agent_data.get('timestamp', 'unknown')}",
-                    "",
-                    "📨 Latest Message from This Agent:",
-                    f"Message ID: {latest_message.get('id', 'unknown')}",
-                    f"Sent at: {latest_message.get('timestamp', 'unknown')}",
-                    f"Delivered: {'✅ Yes' if latest_message.get('delivered', False) else '⏳ Pending'}",
-                    "",
-                    "💬 Message Content:",
-                    latest_message.get("message", "")
-                ]
-                
-                # Store the latest message for potential delivery actions
-                self.selected_message = latest_message
-                
-                # Enable delivery buttons if message is not delivered
-                is_delivered = latest_message.get("delivered", False)
-                self.deliver_to_1_btn.setEnabled(not is_delivered)
-                self.deliver_to_2_btn.setEnabled(not is_delivered)
-                
-            else:
-                # No messages from this agent yet
-                details = [
-                    f"🤖 Agent: {agent_id}",
-                    f"🔧 Tool: {agent_data.get('agent_tool', 'unknown')}",
-                    f"⏱️ Status: {agent_data.get('status', 'unknown')}",
-                    f"📅 Waiting Since: {agent_data.get('timestamp', 'unknown')}",
-                    "",
-                    "📨 No messages from this agent yet",
-                    "",
-                    "💡 This agent is waiting to receive messages."
-                ]
-                
-                # Disable delivery buttons if no message
-                self.deliver_to_1_btn.setEnabled(False) 
-                self.deliver_to_2_btn.setEnabled(False)
-                
-                # Clear selected message
-                if hasattr(self, 'selected_message'):
-                    delattr(self, 'selected_message')
-            
-            self.detail_display.setPlainText("\n".join(details))
     
     def _format_message_content(self, message_content: str) -> str:
         """Format message content for better readability in UI"""
@@ -886,9 +784,17 @@ class ControllerUI(QDialog):
         if len(selected_items) == 1:
             msg_data = selected_items[0].data(Qt.UserRole)
             if msg_data:
-                self.deliver_to_1_btn.setEnabled(not msg_data.get("delivered", False))
-                self.deliver_to_2_btn.setEnabled(not msg_data.get("delivered", False))
                 self.selected_message = msg_data
+                conv_id = msg_data.get("conversation_id")
+                participants = self.current_conversations.get(conv_id, {}).get("participants", [])
+                from_agent = msg_data.get("from_agent", "")
+                self.participants_list.clear()
+                for p in participants:
+                    if p != from_agent:
+                        self.participants_list.addItem(p)
+
+                self.deliver_to_1_btn.setEnabled(len(participants) > 1)
+                self.deliver_to_2_btn.setEnabled(False)
                 
                 # Smart hybrid approach: formatted for complex JSON, raw for simple text
                 raw_message = msg_data.get("message", "")
@@ -959,7 +865,7 @@ class ControllerUI(QDialog):
                 details = [
                     f"Message ID: {msg_data.get('id', 'unknown')}",
                     f"From Agent: {msg_data.get('from_agent', 'unknown')}",
-                    f"Delivered: {'Yes' if msg_data.get('delivered', False) else 'No'}",
+                    f"Delivered: {'Yes' if msg_data.get('delivered_all', False) else 'No'}",
                     f"Timestamp: {msg_data.get('timestamp', 'unknown')}",
                     "",
                     "📋 Message Content:",
@@ -973,7 +879,7 @@ class ControllerUI(QDialog):
             delivered_count = 0
             for item in selected_items:
                 msg_data = item.data(Qt.UserRole)
-                if msg_data and msg_data.get("delivered", False):
+                if msg_data and msg_data.get("delivered_all", False):
                     delivered_count += 1
             
             summary = [
@@ -985,6 +891,7 @@ class ControllerUI(QDialog):
             ]
             
             self.detail_display.setPlainText("\n".join(summary))
+            self.participants_list.clear()
             
             # Disable delivery buttons for multi-selection
             self.deliver_to_1_btn.setEnabled(False)
@@ -992,179 +899,53 @@ class ControllerUI(QDialog):
         else:
             # No selection
             self.detail_display.setPlainText("No message selected")
+            self.participants_list.clear()
             self.deliver_to_1_btn.setEnabled(False)
             self.deliver_to_2_btn.setEnabled(False)
     
 
     
-    def smart_delivery_latest_message(self):
-        """Smart delivery: automatically deliver latest message to the other agent"""
-        # Get latest undelivered message
-        messages = self.flow_manager.get_message_queue()
-        undelivered_messages = [msg for msg in messages if not msg.get("delivered", False)]
-        
-        if not undelivered_messages:
-            self.status_label.setText("⚠️ No undelivered messages available!")
-            self.status_label.setStyleSheet(Styles.get_status_style("warning"))
-            self.status_reset_timer.start(3000)
-            return
-        
-        # Get the newest message
-        latest_message = max(undelivered_messages, 
-                           key=lambda x: x.get("timestamp", ""), 
-                           default=undelivered_messages[-1])
-        
-        message_content = latest_message.get("message", "")
-        sender_agent = latest_message.get("from_agent", "")
-        
-        # Find target agent automatically (NOT the sender)
-        data = self.flow_manager.get_controller_data()
-        waiting_agents = data.get("waiting_agents", {})
-        
-        target_waiting_id = None
-        available_targets = []
-        
-        # Collect all waiting agents that are NOT the sender
-        for waiting_id, agent_data in waiting_agents.items():
-            agent_id = agent_data.get("agent_id", "")
-            status = agent_data.get("status", "")
-            
-            # Only consider agents that are waiting
-            if status == "waiting":
-                if agent_id != sender_agent:
-                    # This is a different agent - valid target
-                    available_targets.append(waiting_id)
-                    if target_waiting_id is None:
-                        target_waiting_id = waiting_id
-        
-        # Validation: Check if we're about to route message to sender (UX improvement)
-        if not available_targets:
-            # Check if only sender is waiting (self-routing scenario)
-            sender_waiting = False
-            for waiting_id, agent_data in waiting_agents.items():
-                if (agent_data.get("agent_id") == sender_agent and 
-                    agent_data.get("status") == "waiting"):
-                    sender_waiting = True
-                    break
-            
-            if sender_waiting:
-                # Clear error: Only sender is waiting (would be self-routing)
-                self.status_label.setText(f"🚫 Cannot route message back to sender ({sender_agent})!")
-                self.status_label.setStyleSheet(Styles.get_status_style("error"))
-            else:
-                # No agents waiting at all
-                self.status_label.setText("⚠️ No target agents available for routing!")
-                self.status_label.setStyleSheet(Styles.get_status_style("warning"))
-            
-            self.status_reset_timer.start(3000)
-            return
-        
-        # FORMAT MESSAGE WITH CONTINUE_CHAT TAG FOR AGENT-TO-AGENT CONVERSATION FLOW
-        formatted_message = self._format_message_for_delivery(message_content, continue_chat=True, source="agent")
-        
-        # Deliver automatically to first available non-sender agent
-        target_agent_data = waiting_agents[target_waiting_id]
-        target_agent_id = target_agent_data.get("agent_id", "unknown")
-        
-        success = self.flow_manager.deliver_message_to_agent(target_waiting_id, formatted_message)
-        
-        if success:
-            # Mark message as delivered
-            self.flow_manager.mark_message_delivered(latest_message.get("id", ""))
-            
-            # Show success status
-            self.status_label.setText(f"🚀 Smart delivered from {sender_agent} to {target_agent_id}!")
-            self.status_label.setStyleSheet(Styles.get_status_style("success"))
-            
-            # Reset status after 3 seconds
-            self.status_reset_timer.start(3000)
-            
-            self.refresh_data()
-            self.result = f"Smart delivered message from {sender_agent} to {target_agent_id}"
-        else:
-            self.status_label.setText(f"❌ Smart delivery failed to {target_agent_id}")
-            self.status_label.setStyleSheet(Styles.get_status_style("error"))
     
-    def deliver_selected_message(self, target_agent_tool: str):
-        """Deliver selected message to specific agent tool"""
+    def broadcast_message(self):
+        """Broadcast selected message to all participants"""
         if not hasattr(self, 'selected_message'):
             QMessageBox.warning(self, "Warning", "Please select a message first!")
             return
-        
-        message_content = self.selected_message.get("message", "")
-        sender_agent = self.selected_message.get("from_agent", "")
-        
-        # Find waiting agent with matching tool
-        data = self.flow_manager.get_controller_data()
-        target_waiting_id = None
-        
-        for waiting_id, agent_data in data["waiting_agents"].items():
-            agent_tool = agent_data.get("agent_tool", "unknown").strip()
-            if agent_tool == target_agent_tool and agent_data.get("status") == "waiting":
-                target_waiting_id = waiting_id
-                break
-        
-        if not target_waiting_id:
-            QMessageBox.warning(self, "Warning", f"No {target_agent_tool} is currently waiting!")
-            return
-        
-        # UX IMPROVEMENT: Prevent self-routing validation
-        agent_id = data["waiting_agents"][target_waiting_id].get("agent_id", "unknown")
-        
-        if agent_id == sender_agent:
-            # Show clear error message for self-routing attempt
-            QMessageBox.critical(
-                self, 
-                "🚫 Self-Routing Not Allowed",
-                f"Cannot deliver message back to the sender!\n\n"
-                f"• Message sender: {sender_agent}\n"
-                f"• Selected target: {agent_id} ({target_agent_tool})\n\n"
-                f"Please choose a different agent or use Smart Delivery to automatically "
-                f"route to another available agent."
-            )
-            
-            # Also show in status bar
-            self.status_label.setText(f"🚫 Blocked self-routing to {sender_agent}")
-            self.status_label.setStyleSheet(Styles.get_status_style("error"))
-            self.status_reset_timer.start(3000)
-            return
+        conv_id = self.selected_message.get("conversation_id")
+        from_agent = self.selected_message.get("from_agent", "")
+        targets = [self.participants_list.item(i).text() for i in range(self.participants_list.count()) if self.participants_list.item(i).text() != from_agent]
+        self._send_to_participants(conv_id, targets)
 
-        # Confirm delivery
-        reply = QMessageBox.question(
-            self,
-            "Confirm Delivery",
-            f"Deliver message to {agent_id} ({target_agent_tool})?\n\n"
-            f"From: {sender_agent}\n"
-            f"To: {agent_id}\n"
-            f"Message: {message_content[:100]}{'...' if len(message_content) > 100 else ''}",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            # FORMAT MESSAGE WITH CONTINUE_CHAT TAG FOR AGENT-TO-AGENT CONVERSATION FLOW
-            formatted_message = self._format_message_for_delivery(message_content, continue_chat=True, source="agent")
-            
-            # Deliver the message
-            success = self.flow_manager.deliver_message_to_agent(target_waiting_id, formatted_message)
-            
-            if success:
-                # Mark message as delivered
-                self.flow_manager.mark_message_delivered(self.selected_message.get("id", ""))
-                
-                # Update status with beautiful success styling
-                self.status_label.setText(f"✅ Message delivered from {sender_agent} to {agent_id}!")
-                self.status_label.setStyleSheet(Styles.get_status_style("success"))
-                
-                # Reset status after 3 seconds
-                self.status_reset_timer.start(3000)
-                
-                self.refresh_data()
-                self.result = f"Delivered message from {sender_agent} to {agent_id}"
-            else:
-                # Show error in status bar
-                self.status_label.setText(f"❌ Failed to deliver message to {agent_id}")
-                self.status_label.setStyleSheet(Styles.get_status_style("error"))
-    
+    def send_selected_message(self):
+        """Send message to selected participants"""
+        if not hasattr(self, 'selected_message'):
+            QMessageBox.warning(self, "Warning", "Please select a message first!")
+            return
+        targets = [item.text() for item in self.participants_list.selectedItems()]
+        if not targets:
+            QMessageBox.warning(self, "Warning", "Please select at least one participant!")
+            return
+        conv_id = self.selected_message.get("conversation_id")
+        self._send_to_participants(conv_id, targets)
+
+    def _send_to_participants(self, conversation_id: str, targets: List[str]):
+        message_content = self.selected_message.get("message", "")
+        formatted_message = self._format_message_for_delivery(message_content, continue_chat=True, source="agent")
+        success = self.flow_manager.deliver_message_to_participants(conversation_id, targets, formatted_message, self.selected_message.get("id", ""))
+        if success:
+            self.status_label.setText(f"✅ Message delivered to {', '.join(targets)}")
+            self.status_label.setStyleSheet(Styles.get_status_style("success"))
+            self.status_reset_timer.start(3000)
+            self.refresh_data()
+        else:
+            QMessageBox.warning(self, "Warning", "No target agents are currently waiting")
+
+    def _on_participant_selection(self):
+        if self.participants_list.selectedItems():
+            self.deliver_to_2_btn.setEnabled(True)
+        else:
+            self.deliver_to_2_btn.setEnabled(False)
+
     def _format_message_for_delivery(self, message_content: str, continue_chat: bool = True, source: str = None) -> str:
         """
         Format message with AI_INTERACTION tags for proper conversation flow
@@ -1224,7 +1005,6 @@ class ControllerUI(QDialog):
                 self.detail_display.setPlainText("All data cleared")
                 self.deliver_to_1_btn.setEnabled(False)
                 self.deliver_to_2_btn.setEnabled(False)
-                self.smart_delivery_btn.setEnabled(False)
                 
                 # Clear selected data
                 if hasattr(self, 'selected_message'):
@@ -1360,11 +1140,11 @@ class ControllerUI(QDialog):
     def _reset_status_label(self):
         """Reset status label to default"""
         data = self.flow_manager.get_controller_data()
-        waiting_count = len(data.get("waiting_agents", {}))
+        conv_count = len(data.get("conversations", {}))
         queue_count = len(data.get("message_queue", []))
         timestamp_display = data.get("timestamp", "")[-8:] if data.get("timestamp") else ""
-        
-        self.status_label.setText(f"📊 {waiting_count} waiting agents • {queue_count} pending messages • Last update: {timestamp_display}")
+
+        self.status_label.setText(f"📊 {conv_count} conversations • {queue_count} pending messages • Last update: {timestamp_display}")
         self.status_label.setStyleSheet(Styles.get_status_label_style())
     
     def get_result(self) -> Optional[str]:

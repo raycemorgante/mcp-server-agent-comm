@@ -59,7 +59,7 @@ def handle_send_message(from_agent: str, message: str) -> str:
         
         # Add to pending calls (waiting for user to route)
         state_manager = StateManager()
-        state_manager.add_pending_call(from_agent_id, message)
+        call_id = state_manager.add_pending_call([from_agent_id], message)
         
         # Show UI to let user choose target
         target_agent = show_controller_ui()
@@ -72,12 +72,12 @@ def handle_send_message(from_agent: str, message: str) -> str:
             )
             
             # Remove from pending calls
-            state_manager.remove_pending_call(from_agent_id)
+            state_manager.remove_pending_call(call_id)
             
             return result
         else:
             # Remove from pending calls if cancelled
-            state_manager.remove_pending_call(from_agent_id)
+            state_manager.remove_pending_call(call_id)
             return "Message sending cancelled by user"
     
     except Exception as e:
@@ -110,8 +110,9 @@ def handle_interactive_communication(agent_id: str = None, message: str = None) 
         state_manager = StateManager()
         
         # Add to pending calls if agent provided
+        call_id = None
         if agent_id:
-            state_manager.add_pending_call(agent_id, message)
+            call_id = state_manager.add_pending_call([agent_id], message)
         
         # Show UI
         target_agent = show_controller_ui()
@@ -127,13 +128,14 @@ def handle_interactive_communication(agent_id: str = None, message: str = None) 
             )
             
             # Remove from pending calls
-            state_manager.remove_pending_call(agent_id_parsed)
+            if call_id:
+                state_manager.remove_pending_call(call_id)
             
             return result
         else:
             # Just show UI for monitoring
-            if agent_id:
-                state_manager.remove_pending_call(agent_id)
+            if call_id:
+                state_manager.remove_pending_call(call_id)
             return "Agent Communication UI closed"
     
     except Exception as e:
