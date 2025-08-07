@@ -118,6 +118,24 @@ class StateManager:
         
         self._write_json(CONVERSATIONS_FILE, conversations)
         return conv_id
+
+    def create_group_conversation(self, participants: List[str]) -> str:
+        """Create a new conversation for a group of participants"""
+        timestamp = int(time.time())
+        base_id = "_".join(sorted(set(participants)))
+        conv_id = f"{base_id}_{timestamp}"
+        conversations = self._read_json(CONVERSATIONS_FILE)
+
+        conversations[conv_id] = {
+            "participants": list(dict.fromkeys(participants)),
+            "created_at": datetime.now().isoformat(),
+            "last_update": datetime.now().isoformat(),
+            "message_count": 0,
+            "messages": []
+        }
+
+        self._write_json(CONVERSATIONS_FILE, conversations)
+        return conv_id
     
     def add_message(self, conv_id: str, from_agent: str, to_agent: str, message: str) -> str:
         """Add message to conversation"""
@@ -190,10 +208,32 @@ class StateManager:
     def find_conversation_between_agents(self, agent1: str, agent2: str) -> Optional[str]:
         """Find existing conversation between two agents"""
         conversations = self._read_json(CONVERSATIONS_FILE)
-        
+
         for conv_id, conv_data in conversations.items():
             participants = conv_data["participants"]
             if (agent1 in participants and agent2 in participants):
                 return conv_id
-        
-        return None 
+
+        return None
+
+    def find_conversation_for_participants(self, participants: List[str]) -> Optional[str]:
+        """Find conversation matching exactly the set of participants"""
+        conversations = self._read_json(CONVERSATIONS_FILE)
+        target = set(participants)
+
+        for conv_id, conv_data in conversations.items():
+            if set(conv_data.get("participants", [])) == target:
+                return conv_id
+
+        return None
+
+    def get_conversations_for_agent(self, agent_id: str) -> List[str]:
+        """Get conversation IDs where the agent participates"""
+        conversations = self._read_json(CONVERSATIONS_FILE)
+        conv_ids = []
+
+        for conv_id, conv_data in conversations.items():
+            if agent_id in conv_data.get("participants", []):
+                conv_ids.append(conv_id)
+
+        return conv_ids

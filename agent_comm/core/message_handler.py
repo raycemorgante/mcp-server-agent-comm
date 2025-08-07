@@ -4,6 +4,7 @@ Message Handler - Handles message routing and processing logic
 
 from typing import Dict, List, Any, Optional, Tuple
 from .state_manager import StateManager
+from ..constants import MESSAGE_STATUS
 
 
 class MessageHandler:
@@ -35,11 +36,45 @@ class MessageHandler:
             
             # Add message to conversation
             msg_id = self.state_manager.add_message(conv_id, from_agent, to_agent, message)
-            
+
             return True, f"Message sent successfully to {to_agent}. Conversation: {conv_id}, Message: {msg_id}"
-            
+
         except Exception as e:
             return False, f"Error sending message: {str(e)}"
+
+    def send_group_message(self, from_agent: str, message: str, participants: List[str],
+                           agent_name: str = None, agent_type: str = "custom") -> Tuple[bool, str]:
+        """Send a message from one agent to multiple participants"""
+        try:
+            # Build complete participant list including sender
+            all_participants = list(dict.fromkeys(participants + [from_agent]))
+
+            # Register agents
+            self._ensure_agent_registered(from_agent, agent_name or from_agent, agent_type)
+            for participant in participants:
+                if participant != from_agent:
+                    self._ensure_agent_registered(participant, participant, "custom")
+
+            # Update sender activity
+            self.state_manager.update_agent_activity(from_agent)
+
+            # Find or create conversation for this group
+            conv_id = self.state_manager.find_conversation_for_participants(all_participants)
+            if not conv_id:
+                conv_id = self.state_manager.create_group_conversation(all_participants)
+
+            # Add message for each recipient
+            message_ids = []
+            for participant in participants:
+                if participant == from_agent:
+                    continue
+                msg_id = self.state_manager.add_message(conv_id, from_agent, participant, message)
+                message_ids.append(msg_id)
+
+            return True, f"Group message sent. Conversation: {conv_id}, Messages: {', '.join(message_ids)}"
+
+        except Exception as e:
+            return False, f"Error sending group message: {str(e)}"
     
     def check_messages(self, agent_id: str, agent_name: str = None, 
                       agent_type: str = "custom") -> Tuple[bool, str]:
@@ -56,8 +91,18 @@ class MessageHandler:
             # Update agent activity
             self.state_manager.update_agent_activity(agent_id)
             
-            # Get pending messages
-            pending_messages = self.state_manager.get_pending_messages_for_agent(agent_id)
+            # Aggregate pending messages from all conversations
+            conv_ids = self.state_manager.get_conversations_for_agent(agent_id)
+            pending_messages = []
+            for conv_id in conv_ids:
+                conv = self.state_manager.get_conversation(conv_id)
+                for message in conv.get("messages", []):
+                    if (message.get("to") == agent_id and
+                            message.get("status") == MESSAGE_STATUS["PENDING"]):
+                        pending_messages.append({
+                            "conversation_id": conv_id,
+                            "message": message
+                        })
             
             if not pending_messages:
                 return True, f"No new messages for {agent_id}."
@@ -67,16 +112,18 @@ class MessageHandler:
             for msg_data in pending_messages:
                 conv_id = msg_data["conversation_id"]
                 message = msg_data["message"]
-                
+
                 # Mark as delivered
                 self.state_manager.mark_message_delivered(conv_id, message["id"])
-                
+
                 # Format message for display
                 from_agent = message["from"]
                 content = message["content"]
                 timestamp = message["timestamp"]
-                
-                result_messages.append(f"From {from_agent} ({timestamp}): {content}")
+
+                result_messages.append(
+                    f"From {from_agent} ({timestamp}) in {conv_id}: {content}"
+                )
             
             # Combine all messages
             if len(result_messages) == 1:
